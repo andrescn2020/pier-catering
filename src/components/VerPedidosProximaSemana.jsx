@@ -59,6 +59,7 @@ const VerPedidosProximaSemana = () => {
             id: doc.id,
             nombre: `${userData.nombre || ''} ${userData.apellido || ''}`.trim() || 'Usuario sin nombre',
             email: userData.email,
+            legajo: userData.legajo || 'Sin asignar',
             bonificacion: userData.bonificacion || false
           });
         }
@@ -68,7 +69,7 @@ const VerPedidosProximaSemana = () => {
       const precioRef = doc(db, 'config', 'precioMenu');
       const precioSnap = await getDoc(precioRef);
       const precioMenu = precioSnap.exists() ? precioSnap.data().precio : 0;
-      const bonificacionEmpleadoNormal = precioSnap.exists() ? precioSnap.data().bonificacionEmpleadoNormal : 0;
+      const porcentajeBonificacion = precioSnap.exists() ? precioSnap.data().porcentajeBonificacion : 70;
 
       // Obtener los pedidos de próxima semana
       const pedidosRef = collection(db, 'pedidos');
@@ -108,7 +109,10 @@ const VerPedidosProximaSemana = () => {
                 if (usuario.bonificacion) {
                   precioTotal += 0; // Si está bonificado, el precio es 0
                 } else {
-                  precioTotal += (precioMenu - bonificacionEmpleadoNormal); // Si no está bonificado, es el precio normal menos la bonificación
+                  // Si no está bonificado, aplicar el porcentaje de bonificación
+                  const porcentaje = parseFloat(porcentajeBonificacion) || 70;
+                  const precioConBonificacion = Math.round(precioMenu * (100 - porcentaje) / 100);
+                  precioTotal += precioConBonificacion;
                 }
               }
             });
@@ -117,6 +121,7 @@ const VerPedidosProximaSemana = () => {
           return {
             id: usuario.id,
             nombre: usuario.nombre,
+            legajo: usuario.legajo,
             fecha: pedido ? pedido.fechaCreacion : '',
             lunesData: pedido ? pedido.lunes : null,
             martesData: pedido ? pedido.martes : null,
@@ -191,7 +196,7 @@ const VerPedidosProximaSemana = () => {
       valueToLabelPorDia[dia] = {};
       if (opcionesMenuConfig?.[diaFirestore]) {
         opcionesMenuConfig[diaFirestore].forEach(label => {
-          if (label.trim().toUpperCase() === 'NO PEDIR COMIDA ESTE DÍA') return; // Filtrar
+          if (label.trim().toUpperCase() === 'NO PEDIR COMIDA ESTE DIA') return; // Filtrar
           // Generar value igual que en el formulario
           const value = label
             .toLowerCase()
@@ -214,7 +219,7 @@ const VerPedidosProximaSemana = () => {
     // Inicializar el conteo para todas las opciones únicas
     Array.from(labelsUnicos.values()).forEach(label => {
       if (!conteo[label]) {
-        conteo[label] = { LU: 0, MA: 0, MI: 0, JU: 0, VI: 0 };
+        conteo[label] = { LUNES: 0, MARTES: 0, MIÉRCOLES: 0, JUEVES: 0, VIERNES: 0 };
       }
     });
 
@@ -228,8 +233,8 @@ const VerPedidosProximaSemana = () => {
           // Buscar el label correspondiente a este value
           const label = valueToLabelPorDia[dia][opcion];
           if (label && conteo[label]) {
-            const diaKey = Object.keys(conteo[label])[index];
-            conteo[label][diaKey]++;
+            const diaCompleto = diasSemanaFirestore[index].toUpperCase();
+            conteo[label][diaCompleto]++;
           }
         }
       });
@@ -376,6 +381,7 @@ const VerPedidosProximaSemana = () => {
     // Preparar los datos de pedidos para Excel
     const datosPedidos = pedidos.map(usuario => ({
       'Nombre': usuario.nombre,
+      'Legajo': usuario.legajo,
       'Fecha': usuario.fecha ? formatearFecha(usuario.fecha) : '',
       'Lunes': usuario.lunesData === null ? 'NO COMPLETÓ' : (formatearOpcion(usuario.lunesData) === 'NO PIDIÓ' ? '' : formatearOpcion(usuario.lunesData)),
       'Martes': usuario.martesData === null ? 'NO COMPLETÓ' : (formatearOpcion(usuario.martesData) === 'NO PIDIÓ' ? '' : formatearOpcion(usuario.martesData)),
@@ -388,69 +394,170 @@ const VerPedidosProximaSemana = () => {
     // Preparar los datos de contadores para Excel
     let datosContadores = [];
     
-    // Mostrar todas las opciones únicas de Firestore en el resumen, en orden alfabético
-    const opcionesResumen = Array.from(contadores?.todasLasOpciones?.values() || []).sort((a, b) => a.localeCompare(b));
+    // Mostrar todas las opciones únicas de Firestore en el resumen, agrupadas por tipo base
+    const opcionesResumen = Array.from(contadores?.todasLasOpciones?.values() || [])
+      .filter(label => !label.toUpperCase().includes('NO PEDIR')) // Filtrar NO PEDIR
+      .sort((a, b) => a.localeCompare(b));
     
-    // Inicializar contadores de totales
-    const totales = { LU: 0, MA: 0, MI: 0, JU: 0, VI: 0, TOTAL: 0 };
+    // Agrupar menús por tipo base (sin el postre)
+    const menusPorTipo = {};
+    const totales = { LUNES: 0, MARTES: 0, MIÉRCOLES: 0, JUEVES: 0, VIERNES: 0, TOTAL: 0 };
     
     opcionesResumen.forEach(label => {
-      const fila = (contadores?.conteo && contadores.conteo[label]) || { LU: 0, MA: 0, MI: 0, JU: 0, VI: 0 };
-      // Calcular total de la fila
-      const totalFila = fila.LU + fila.MA + fila.MI + fila.JU + fila.VI;
+      // Extraer el nombre base del menú (antes de "C/")
+      const menuBase = label.includes('C/') ? label.split('C/')[0].trim() : label;
       
-      // Sumar a los totales
-      totales.LU += fila.LU;
-      totales.MA += fila.MA;
-      totales.MI += fila.MI;
-      totales.JU += fila.JU;
-      totales.VI += fila.VI;
+      // Obtener los contadores para este label específico
+      const fila = (contadores?.conteo && contadores.conteo[label]) || { LUNES: 0, MARTES: 0, MIÉRCOLES: 0, JUEVES: 0, VIERNES: 0 };
+      
+      // Si no existe este tipo base, crearlo
+      if (!menusPorTipo[menuBase]) {
+        menusPorTipo[menuBase] = { LUNES: 0, MARTES: 0, MIÉRCOLES: 0, JUEVES: 0, VIERNES: 0 };
+      }
+      
+      // Sumar los contadores al tipo base
+      menusPorTipo[menuBase].LUNES += fila.LUNES;
+      menusPorTipo[menuBase].MARTES += fila.MARTES;
+      menusPorTipo[menuBase].MIÉRCOLES += fila.MIÉRCOLES;
+      menusPorTipo[menuBase].JUEVES += fila.JUEVES;
+      menusPorTipo[menuBase].VIERNES += fila.VIERNES;
+      
+      // Sumar a los totales generales
+      totales.LUNES += fila.LUNES;
+      totales.MARTES += fila.MARTES;
+      totales.MIÉRCOLES += fila.MIÉRCOLES;
+      totales.JUEVES += fila.JUEVES;
+      totales.VIERNES += fila.VIERNES;
+    });
+    
+    // Convertir el objeto agrupado a array para Excel
+    Object.entries(menusPorTipo).forEach(([menuBase, conteos]) => {
+      const totalFila = conteos.LUNES + conteos.MARTES + conteos.MIÉRCOLES + conteos.JUEVES + conteos.VIERNES;
       totales.TOTAL += totalFila;
       
       datosContadores.push({
-        'MENU': label,
-        'LU': fila.LU,
-        'MA': fila.MA,
-        'MI': fila.MI,
-        'JU': fila.JU,
-        'VI': fila.VI,
+        'MENU': menuBase,
+        'LUNES': conteos.LUNES,
+        'MARTES': conteos.MARTES,
+        'MIÉRCOLES': conteos.MIÉRCOLES,
+        'JUEVES': conteos.JUEVES,
+        'VIERNES': conteos.VIERNES,
         'TOTAL': totalFila
       });
     });
 
-    // Ordenar por MENU descendente (Z-A) y dejar TOTAL al final
-    const filaTotalExcel = datosContadores.find(f => f.MENU && f.MENU.trim().toUpperCase() === 'TOTAL');
-    let datosContadoresSinTotal = datosContadores.filter(f => f.MENU && f.MENU.trim().toUpperCase() !== 'TOTAL');
-    datosContadoresSinTotal = datosContadoresSinTotal.sort((a, b) =>
+    // Ordenar por MENU alfabéticamente
+    datosContadores.sort((a, b) =>
       a.MENU.trim().normalize('NFD').replace(/\u0300-\u036f/g, '').toLowerCase()
         .localeCompare(
           b.MENU.trim().normalize('NFD').replace(/\u0300-\u036f/g, '').toLowerCase()
         )
     );
-    if (filaTotalExcel) datosContadoresSinTotal.push(filaTotalExcel);
 
     // Crear el libro de trabajo y las hojas
     const wb = XLSX.utils.book_new();
     const wsPedidos = XLSX.utils.json_to_sheet(datosPedidos);
-    const wsContadores = XLSX.utils.json_to_sheet(datosContadoresSinTotal);
+    const wsContadores = XLSX.utils.json_to_sheet(datosContadores);
 
-    // Ajustar el ancho de las columnas
+    // Crear hojas de etiquetado por día
+    const hojasEtiquetado = [];
+    
+    diasSemana.forEach((dia, indexDia) => {
+      const diaFirestore = diasSemanaFirestore[indexDia];
+      const datosDelDia = {};
+      
+      // Recopilar tipos de menú únicos para este día
+      const tiposDelDia = new Set();
+      
+      pedidos.forEach(usuario => {
+        if (!usuario.tienePedido) return;
+        
+        const diaData = usuario[`${dia}Data`];
+        if (!diaData || !diaData.pedido || esNoPedir(diaData.pedido)) return;
+        
+        // Buscar el label correspondiente al value del pedido
+        let labelCompleto = null;
+        
+        // Primero buscar en opcionesMenuCompleto
+        const opcionEncontrada = opcionesMenuCompleto.find(opt => opt.value === diaData.pedido);
+        if (opcionEncontrada) {
+          labelCompleto = opcionEncontrada.label;
+        } else {
+          // Si no se encuentra, usar el value convertido a label
+          labelCompleto = diaData.pedido.toUpperCase().replace(/_/g, ' ');
+        }
+        
+        if (!labelCompleto) return;
+        
+        // Extraer el tipo base del menú
+        const tipoBase = labelCompleto.includes('C/') ? labelCompleto.split('C/')[0].trim() : labelCompleto;
+        tiposDelDia.add(tipoBase);
+        
+        // Inicializar array si no existe
+        if (!datosDelDia[tipoBase]) {
+          datosDelDia[tipoBase] = [];
+        }
+        
+        // Agregar el nombre del usuario
+        datosDelDia[tipoBase].push(usuario.nombre.toUpperCase());
+      });
+      
+      // Solo crear hoja si hay datos para este día
+      if (tiposDelDia.size > 0) {
+        const tiposOrdenados = Array.from(tiposDelDia).sort();
+        
+        // Encontrar la longitud máxima para normalizar el array
+        const maxLength = Math.max(...Object.values(datosDelDia).map(arr => arr.length));
+        
+        // Crear el array para este día
+        const arrayDelDia = [];
+        for (let i = 0; i < maxLength; i++) {
+          const fila = {};
+          tiposOrdenados.forEach(tipo => {
+            fila[tipo] = datosDelDia[tipo][i] || '';
+          });
+          arrayDelDia.push(fila);
+        }
+        
+        // Crear la hoja de trabajo para este día
+        const wsDelDia = XLSX.utils.json_to_sheet(arrayDelDia);
+        
+        // Configurar anchos de columna
+        const wscolsDelDia = tiposOrdenados.map(() => ({ wch: 25 }));
+        wsDelDia['!cols'] = wscolsDelDia;
+        
+        // Guardar la hoja con su nombre
+        hojasEtiquetado.push({
+          nombre: `Etiquetado ${diaFirestore}`,
+          hoja: wsDelDia
+        });
+      }
+    });
+
+    // Ajustar el ancho de las columnas para las hojas principales
     const wscols = [
-      { wch: 30 }, // Nombre/Menú
-      { wch: 30 }, // Fecha
-      { wch: 30 }, // Lunes
-      { wch: 30 }, // Martes
-      { wch: 30 }, // Miércoles
-      { wch: 30 }, // Jueves
-      { wch: 30 }, // Viernes
-      { wch: 30 }  // Precio Total
+      { wch: 25 }, // Nombre
+      { wch: 15 }, // Legajo
+      { wch: 20 }, // Fecha
+      { wch: 25 }, // Lunes
+      { wch: 25 }, // Martes
+      { wch: 25 }, // Miércoles
+      { wch: 25 }, // Jueves
+      { wch: 25 }, // Viernes
+      { wch: 15 }  // Precio Total
     ];
+    
     wsPedidos['!cols'] = wscols;
     wsContadores['!cols'] = wscols;
 
     // Agregar las hojas al libro
     XLSX.utils.book_append_sheet(wb, wsPedidos, 'Pedidos Próxima Semana');
     XLSX.utils.book_append_sheet(wb, wsContadores, 'Resumen');
+    
+    // Agregar todas las hojas de etiquetado
+    hojasEtiquetado.forEach(({ nombre, hoja }) => {
+      XLSX.utils.book_append_sheet(wb, hoja, nombre);
+    });
     
 
     // Guardar el archivo
@@ -672,6 +779,7 @@ const VerPedidosProximaSemana = () => {
           <thead>
             <tr>
               <th>Nombre</th>
+              <th>Legajo</th>
               <th>Fecha</th>
               <th>Lunes</th>
               <th>Martes</th>
@@ -685,6 +793,7 @@ const VerPedidosProximaSemana = () => {
             {pedidosFiltrados.map((usuario) => (
               <tr key={usuario.id} className={usuario.tienePedido ? '' : 'sin-pedido'} style={{ cursor: 'pointer' }} onClick={() => handleFilaClick(usuario)}>
                 <td>{usuario.nombre}</td>
+                <td>{usuario.legajo}</td>
                 <td>{usuario.fecha ? formatearFecha(usuario.fecha) : ''}</td>
                 {diasSemana.map(dia => {
                   const diaData = usuario[`${dia}Data`];
@@ -712,46 +821,68 @@ const VerPedidosProximaSemana = () => {
             <thead>
               <tr>
                 <th>MENU</th>
-                <th>LU</th>
-                <th>MA</th>
-                <th>MI</th>
-                <th>JU</th>
-                <th>VI</th>
+                <th>LUNES</th>
+                <th>MARTES</th>
+                <th>MIÉRCOLES</th>
+                <th>JUEVES</th>
+                <th>VIERNES</th>
                 <th>TOTAL</th>
               </tr>
             </thead>
             <tbody>
               {(() => {
-                const filas = Object.entries(contadores?.conteo || {})
-                  .filter(([categoria]) => categoria !== 'FRUTAS')
-                  .map(([categoria, valores]) => ({
-                    MENU: categoria,
-                    LU: valores.LU,
-                    MA: valores.MA,
-                    MI: valores.MI,
-                    JU: valores.JU,
-                    VI: valores.VI,
-                    TOTAL: valores.LU + valores.MA + valores.MI + valores.JU + valores.VI
-                  }));
-                // Separar la fila TOTAL si existe
-                const filaTotal = filas.find(f => f.MENU.trim().toUpperCase() === 'TOTAL');
-                const filasSinTotal = filas.filter(f => f.MENU.trim().toUpperCase() !== 'TOTAL');
-                // Ordenar A-Z robusto
-                filasSinTotal.sort((a, b) =>
+                // Agrupar menús por tipo base (sin el postre) para la tabla de resumen
+                const menusPorTipo = {};
+                
+                Object.entries(contadores?.conteo || {}).forEach(([categoria, valores]) => {
+                  // Filtrar NO PEDIR y FRUTAS
+                  if (categoria === 'FRUTAS' || categoria.toUpperCase().includes('NO PEDIR')) {
+                    return;
+                  }
+                  
+                  // Extraer el nombre base del menú (antes de "C/")
+                  const menuBase = categoria.includes('C/') ? categoria.split('C/')[0].trim() : categoria;
+                  
+                  // Si no existe este tipo base, crearlo
+                  if (!menusPorTipo[menuBase]) {
+                    menusPorTipo[menuBase] = { LUNES: 0, MARTES: 0, MIÉRCOLES: 0, JUEVES: 0, VIERNES: 0 };
+                  }
+                  
+                  // Sumar los contadores al tipo base
+                  menusPorTipo[menuBase].LUNES += valores.LUNES;
+                  menusPorTipo[menuBase].MARTES += valores.MARTES;
+                  menusPorTipo[menuBase].MIÉRCOLES += valores.MIÉRCOLES;
+                  menusPorTipo[menuBase].JUEVES += valores.JUEVES;
+                  menusPorTipo[menuBase].VIERNES += valores.VIERNES;
+                });
+                
+                // Convertir a array y calcular totales
+                const filas = Object.entries(menusPorTipo).map(([menuBase, valores]) => ({
+                  MENU: menuBase,
+                  LUNES: valores.LUNES,
+                  MARTES: valores.MARTES,
+                  MIÉRCOLES: valores.MIÉRCOLES,
+                  JUEVES: valores.JUEVES,
+                  VIERNES: valores.VIERNES,
+                  TOTAL: valores.LUNES + valores.MARTES + valores.MIÉRCOLES + valores.JUEVES + valores.VIERNES
+                }));
+                
+                // Ordenar alfabéticamente
+                filas.sort((a, b) =>
                   a.MENU.trim().normalize('NFD').replace(/\u0300-\u036f/g, '').toLowerCase()
                     .localeCompare(
                       b.MENU.trim().normalize('NFD').replace(/\u0300-\u036f/g, '').toLowerCase()
                     )
                 );
-                if (filaTotal) filasSinTotal.push(filaTotal);
-                return filasSinTotal.map(fila => (
+                
+                return filas.map(fila => (
                   <tr key={fila.MENU}>
                     <td>{fila.MENU}</td>
-                    <td>{fila.LU}</td>
-                    <td>{fila.MA}</td>
-                    <td>{fila.MI}</td>
-                    <td>{fila.JU}</td>
-                    <td>{fila.VI}</td>
+                    <td>{fila.LUNES}</td>
+                    <td>{fila.MARTES}</td>
+                    <td>{fila.MIÉRCOLES}</td>
+                    <td>{fila.JUEVES}</td>
+                    <td>{fila.VIERNES}</td>
                     <td>{fila.TOTAL}</td>
                   </tr>
                 ));

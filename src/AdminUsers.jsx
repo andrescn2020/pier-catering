@@ -21,6 +21,7 @@ const AdminUsers = ({ mode = "view" }) => {
     nombre: '',
     apellido: '',
     usuario: '',
+    legajo: '',
     bonificacion: false
   });
   const [error, setError] = useState('');
@@ -94,6 +95,7 @@ const AdminUsers = ({ mode = "view" }) => {
         apellido: dataToUse.apellido,
         rol: 'usuario', // Siempre crear como usuario
         usuario: dataToUse.usuario || dataToUse.email.split('@')[0],
+        legajo: dataToUse.legajo,
         beneficio: "estandar",
         bonificacion: dataToUse.bonificacion,
         fechaCreacion: serverTimestamp()
@@ -116,6 +118,7 @@ const AdminUsers = ({ mode = "view" }) => {
         nombre: '',
         apellido: '',
         usuario: '',
+        legajo: '',
         bonificacion: false
       });
       setShowCreateForm(false);
@@ -160,6 +163,15 @@ const AdminUsers = ({ mode = "view" }) => {
     const usuarioSnapshot = await getDocs(usuarioQuery);
     if (!usuarioSnapshot.empty) {
       throw new Error("El nombre de usuario ya existe. Por favor, usa un usuario diferente.");
+    }
+    
+    // Validar legajo único (si se proporciona)
+    if (formData.legajo && formData.legajo.trim() !== '') {
+      const legajoQuery = query(usersRef, where("legajo", "==", formData.legajo));
+      const legajoSnapshot = await getDocs(legajoQuery);
+      if (!legajoSnapshot.empty) {
+        throw new Error("El legajo ya existe. Por favor, usa un legajo diferente.");
+      }
     }
   };
 
@@ -278,6 +290,7 @@ const AdminUsers = ({ mode = "view" }) => {
                 {/*<p><strong>ID:</strong> {user.id}</p>*/}
                 <p><strong>Usuario:</strong> {user.usuario || "No definido"}</p>
                 <p><strong>Email:</strong> {user.email}</p>
+                <p><strong>Legajo:</strong> {user.legajo || "No asignado"}</p>
                 <p><strong>Nombre:</strong> {user.nombre || "Sin nombre"}</p>
                 <p><strong>Apellido:</strong> {user.apellido || "Sin apellido"}</p>
                 <p><strong>Rol:</strong> {user.rol || "usuario"}</p>
@@ -384,6 +397,19 @@ const AdminUsers = ({ mode = "view" }) => {
             value={formData.usuario}
             onChange={handleChange}
             placeholder="Si se deja vacío, se generará del email"
+            disabled={isCreatingUser}
+          />
+        </div>
+
+        <div className="form-group">
+          <label htmlFor="legajo">Legajo</label>
+          <input
+            type="text"
+            id="legajo"
+            name="legajo"
+            value={formData.legajo}
+            onChange={handleChange}
+            placeholder="Número de legajo del empleado"
             disabled={isCreatingUser}
           />
         </div>

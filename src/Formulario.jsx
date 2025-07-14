@@ -47,7 +47,7 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
   const [necesitaRecargar, setNecesitaRecargar] = useState(false);
   const [precioPorDia, setPrecioPorDia] = useState(2000); // Precio por defecto
   const [precioMenu, setPrecioMenu] = useState(2000);
-  const [bonificacionEmpleadoNormal, setBonificacionEmpleadoNormal] = useState(1500);
+  const [porcentajeBonificacion, setPorcentajeBonificacion] = useState(70);
 
   // Calcular día de la semana y semana seleccionada dentro del componente
   const hoy = new Date();
@@ -1075,14 +1075,17 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
       
       if (precioSnap.exists()) {
         const data = precioSnap.data();
-        setPrecioMenu(data.precio || 2000);
-        setBonificacionEmpleadoNormal(data.bonificacionEmpleadoNormal || 1500);
+        setPrecioMenu(data.precio || 6400);
+        setPorcentajeBonificacion(data.porcentajeBonificacion || 70);
         
         // Calcular el precio por día según la bonificación del usuario
         if (userData?.bonificacion) {
           setPrecioPorDia(0); // Si está bonificado, el precio es 0
         } else {
-          setPrecioPorDia(data.precio - data.bonificacionEmpleadoNormal); // Si no está bonificado, es el precio normal menos la bonificación
+          // Si no está bonificado, aplicar el porcentaje de bonificación
+          const porcentaje = parseFloat(data.porcentajeBonificacion) || 70;
+          const precioConBonificacion = Math.round(data.precio * (100 - porcentaje) / 100);
+          setPrecioPorDia(precioConBonificacion);
         }
       }
     } catch (error) {
@@ -1096,10 +1099,12 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
       if (userData.bonificacion) {
         setPrecioPorDia(0);
       } else {
-        setPrecioPorDia(precioMenu - bonificacionEmpleadoNormal);
+        const porcentaje = parseFloat(porcentajeBonificacion) || 70;
+        const precioConBonificacion = Math.round(precioMenu * (100 - porcentaje) / 100);
+        setPrecioPorDia(precioConBonificacion);
       }
     }
-  }, [userData, precioMenu, bonificacionEmpleadoNormal]);
+  }, [userData, precioMenu, porcentajeBonificacion]);
 
   if (isLoading) {
     return (

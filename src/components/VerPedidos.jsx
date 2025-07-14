@@ -31,7 +31,7 @@ const VerPedidos = ({ tipo = 'actual' }) => {
   const [confirmModal, setConfirmModal] = useState({ isOpen: false, title: '', message: '', type: 'info', actions: [] });
   const [menuData, setMenuData] = useState(null);
   const [precioMenu, setPrecioMenu] = useState(0);
-  const [bonificacionEmpleadoNormal, setBonificacionEmpleadoNormal] = useState(0);
+  const [porcentajeBonificacion, setPorcentajeBonificacion] = useState(70);
   const [isPrecioLoaded, setIsPrecioLoaded] = useState(false);
   const [isMenuLoaded, setIsMenuLoaded] = useState(false);
   const [isPedidosLoaded, setIsPedidosLoaded] = useState(false);
@@ -59,6 +59,7 @@ const VerPedidos = ({ tipo = 'actual' }) => {
             id: doc.id,
             nombre: `${userData.nombre || ''} ${userData.apellido || ''}`.trim() || 'Usuario sin nombre',
             email: userData.email,
+            legajo: userData.legajo || 'Sin asignar',
             bonificacion: userData.bonificacion || false
           });
         }
@@ -98,11 +99,14 @@ const VerPedidos = ({ tipo = 'actual' }) => {
           if (pedido) {
             diasSemana.forEach(dia => {
               const diaData = pedido[dia];
-              if (diaData && diaData.pedido && diaData.pedido !== 'no_pedir') {
+              if (diaData && diaData.pedido && !esNoPedir(diaData.pedido)) {
                 if (usuario.bonificacion) {
                   precioTotal += 0; // Si está bonificado, el precio es 0
                 } else {
-                  precioTotal += (precioMenu - bonificacionEmpleadoNormal); // Si no está bonificado, es el precio normal menos la bonificación
+                  // Si no está bonificado, aplicar el porcentaje de bonificación
+                  const porcentaje = parseFloat(porcentajeBonificacion) || 70;
+                  const precioConBonificacion = Math.round(precioMenu * (100 - porcentaje) / 100);
+                  precioTotal += precioConBonificacion;
                 }
               }
             });
@@ -111,6 +115,7 @@ const VerPedidos = ({ tipo = 'actual' }) => {
           return {
             id: usuario.id,
             nombre: usuario.nombre,
+            legajo: usuario.legajo,
             fecha: pedido ? pedido.fechaCreacion : '',
             lunesData: pedido ? pedido.lunes : null,
             martesData: pedido ? pedido.martes : null,
@@ -160,12 +165,12 @@ const VerPedidos = ({ tipo = 'actual' }) => {
       if (precioSnap.exists()) {
         const data = precioSnap.data();
         setPrecioMenu(data.precio || 0);
-        setBonificacionEmpleadoNormal(data.bonificacionEmpleadoNormal || 0);
+        setPorcentajeBonificacion(data.porcentajeBonificacion || 70);
       }
       setIsPrecioLoaded(true);
     } catch (error) {
       setPrecioMenu(0);
-      setBonificacionEmpleadoNormal(0);
+      setPorcentajeBonificacion(70);
       setIsPrecioLoaded(true);
     }
   };
@@ -281,27 +286,18 @@ const VerPedidos = ({ tipo = 'actual' }) => {
     const labelsUnicos = new Map();
     // Mapeo value->label por día
     const valueToLabelPorDia = {};
-    
-    // Primero, recolectar todas las opciones únicas de todos los días
     diasSemana.forEach((dia, index) => {
       const diaFirestore = diasSemanaFirestore[index];
       valueToLabelPorDia[dia] = {};
-      
-      // Verificar si existen las opciones para este día
-      if (opcionesMenuConfig && opcionesMenuConfig[diaFirestore]) {
-        const opcionesDelDia = opcionesMenuConfig[diaFirestore];
-        
-        opcionesDelDia.forEach(label => {
-          if (label.trim().toUpperCase() === 'NO PEDIR COMIDA ESTE DÍA') return;
-          
+      if (opcionesMenuConfig?.[diaFirestore]) {
+        opcionesMenuConfig[diaFirestore].forEach(label => {
+          if (label.trim().toUpperCase() === 'NO PEDIR COMIDA ESTE DIA') return; // Filtrar
           // Generar value igual que en el formulario
           const value = label
             .toLowerCase()
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar tildes
             .replace(/\s+/g, '_');
-          
           valueToLabelPorDia[dia][value] = label;
-          
           // Normalizar el label para unicidad (robusto)
           const labelNorm = label
             .trim()
@@ -309,17 +305,17 @@ const VerPedidos = ({ tipo = 'actual' }) => {
             .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quitar tildes
             .replace(/\s+/g, ' ') // un solo espacio entre palabras
             .replace(/ +/g, ' '); // quitar espacios extra
-          
           if (!labelsUnicos.has(labelNorm)) {
             labelsUnicos.set(labelNorm, label.trim());
           }
         });
       }
     });
-
-    // Inicializar el conteo para todas las opciones únicas con ceros
+    // Inicializar el conteo para todas las opciones únicas
     Array.from(labelsUnicos.values()).forEach(label => {
-      conteo[label] = { LU: 0, MA: 0, MI: 0, JU: 0, VI: 0 };
+      if (!conteo[label]) {
+        conteo[label] = { LUNES: 0, MARTES: 0, MIÉRCOLES: 0, JUEVES: 0, VIERNES: 0 };
+      }
     });
 
     // Contar los pedidos exactos por label y día
@@ -327,44 +323,26 @@ const VerPedidos = ({ tipo = 'actual' }) => {
       diasSemana.forEach((dia, index) => {
         const diaData = usuario[`${dia}Data`];
         if (!diaData) return;
-        
         const opcion = diaData.pedido;
-        if (opcion && opcion !== 'no_pedir') {
+        if (opcion && !esNoPedir(opcion)) {
           // Buscar el label correspondiente a este value
           const label = valueToLabelPorDia[dia][opcion];
-          if (label) {
-            // Solo normalizar a C/GELATINA si es un pedido tardío
-            const labelNormalizado = diaData.esTardio ? 
-              label.replace(/C\/[A-Z]+$/, 'C/GELATINA') : 
-              label;
-            
-            if (conteo[labelNormalizado]) {
-              const diaKey = Object.keys(conteo[labelNormalizado])[index];
-              conteo[labelNormalizado][diaKey]++;
-            }
+          if (label && conteo[label]) {
+            const diaCompleto = diasSemanaFirestore[index].toUpperCase();
+            conteo[label][diaCompleto]++;
           }
         }
       });
     });
-
-    // Asegurarse de que todas las opciones del menú estén en el conteo
-    Object.values(opcionesMenuConfig || {}).flat().forEach(label => {
-      if (label.trim().toUpperCase() === 'NO PEDIR COMIDA ESTE DÍA') return;
-      
-      if (!conteo[label.trim()]) {
-        conteo[label.trim()] = { LU: 0, MA: 0, MI: 0, JU: 0, VI: 0 };
-      }
-    });
-
     return { conteo, todasLasOpciones: labelsUnicos };
   };
 
   useEffect(() => {
     if (pedidos.length > 0) {
-      const nuevosContadores = calcularContadores(pedidos);
-      setContadores(nuevosContadores.conteo);
+      const resultado = calcularContadores(pedidos);
+      setContadores(resultado);
     }
-  }, [pedidos]);
+  }, [pedidos, opcionesMenuConfig]);
 
   const opcionesMenu = [
     { value: "no_pedir", label: "NO PEDIR" },
@@ -477,24 +455,23 @@ const VerPedidos = ({ tipo = 'actual' }) => {
     }
   };
 
+  const esNoPedir = (valor) => {
+    if (!valor) return true;
+    if (valor === 'no_pedir') return true;
+    if (typeof valor === 'string' && valor.trim().toUpperCase().normalize('NFD').replace(/\u0300-\u036f/g, '') === 'NO PEDIR COMIDA ESTE DIA') return true;
+    return false;
+  };
+
   const formatearOpcion = (opcion) => {
     if (!opcion) return 'NO COMPLETÓ';
     if (typeof opcion === 'object') {
-      if (opcion.pedido === 'no_pedir') return 'NO PIDIÓ';
-      const opcionEncontrada = opcionesMenuCompleto.find(opt => opt.value === opcion.pedido) || 
-                             opcionesMenu.find(opt => opt.value === opcion.pedido);
-      let menuLabel = opcionEncontrada ? opcionEncontrada.label : opcion.pedido.toUpperCase().replace(/_/g, ' ');
-      
-      if (opcion.esTardio) {
-        // Reemplazar cualquier sufijo de postre por C/GELATINA
-        menuLabel = menuLabel.replace(/C\/[A-Z]+$/, 'C/GELATINA');
-        return `${menuLabel} (Pedido Tarde)`;
-      }
-      return menuLabel;
+      if (esNoPedir(opcion.pedido)) return 'NO PIDIÓ';
+      const opcionEncontrada = opcionesMenuCompleto.find(opt => opt.value === opcion.pedido);
+      const menuLabel = opcionEncontrada ? opcionEncontrada.label : opcion.pedido.toUpperCase().replace(/_/g, ' ');
+      return opcion.esTardio ? `${menuLabel} (Pedido Tarde)` : menuLabel;
     }
-    if (opcion === 'no_pedir') return 'NO PIDIÓ';
-    const opcionEncontrada = opcionesMenuCompleto.find(opt => opt.value === opcion) || 
-                           opcionesMenu.find(opt => opt.value === opcion);
+    if (esNoPedir(opcion)) return 'NO PIDIÓ';
+    const opcionEncontrada = opcionesMenuCompleto.find(opt => opt.value === opcion);
     return opcionEncontrada ? opcionEncontrada.label : opcion.toUpperCase().replace(/_/g, ' ');
   };
 
@@ -512,19 +489,19 @@ const VerPedidos = ({ tipo = 'actual' }) => {
       // Calcular cantidad de menús pedidos en la semana
       const cantidadMenus = diasSemana.reduce((total, dia) => {
         const diaData = usuario[`${dia}Data`];
-        return total + (diaData && diaData.pedido && diaData.pedido !== 'no_pedir' ? 1 : 0);
+        return total + (diaData && diaData.pedido && !esNoPedir(diaData.pedido) ? 1 : 0);
       }, 0);
 
-      // Calcular bonificación empleado normal (solo para usuarios no bonificados)
-      const bonificacionNormal = !usuario.bonificacion ? 
-        (bonificacionEmpleadoNormal * cantidadMenus) : 0;
+      // Calcular el precio que paga el usuario
+      const precioUsuario = usuario.bonificacion ? 0 : Math.round(precioMenu * (100 - parseFloat(porcentajeBonificacion)) / 100);
+      const precioTotalUsuario = cantidadMenus * precioUsuario;
 
-      // Calcular bonificación completa (solo para usuarios bonificados)
-      const bonificacionCompleta = usuario.bonificacion ? 
-        (precioMenu * cantidadMenus) : 0;
+      // Calcular bonificación (diferencia entre precio completo y lo que paga el usuario)
+      const bonificacionTotal = (cantidadMenus * precioMenu) - precioTotalUsuario;
 
       return {
         'Nombre': usuario.nombre,
+        'Legajo': usuario.legajo,
         'Fecha': usuario.fecha ? formatearFecha(usuario.fecha) : '',
         'Lunes': usuario.lunesData === null ? 'NO COMPLETÓ' : (formatearOpcion(usuario.lunesData) === 'NO PIDIÓ' ? '' : formatearOpcion(usuario.lunesData)),
         'Martes': usuario.martesData === null ? 'NO COMPLETÓ' : (formatearOpcion(usuario.martesData) === 'NO PIDIÓ' ? '' : formatearOpcion(usuario.martesData)),
@@ -533,62 +510,80 @@ const VerPedidos = ({ tipo = 'actual' }) => {
         'Viernes': usuario.viernesData === null ? 'NO COMPLETÓ' : (formatearOpcion(usuario.viernesData) === 'NO PIDIÓ' ? '' : formatearOpcion(usuario.viernesData)),
         'Cantidad de Pedidos': cantidadMenus,
         'Precio con Bonificaciones': usuario.tienePedido ? (usuario.precioTotal || 0) : 0,
-        'Bonificacion Parcial': bonificacionNormal,
-        'Bonificacion Completa': bonificacionCompleta
+        'Bonificacion Total': bonificacionTotal,
+        'Precio Completo': cantidadMenus * precioMenu
       };
     });
 
     // Preparar los datos de contadores para Excel
     let datosContadores = [];
     
-    // Inicializar contadores de totales
-    const totales = { LU: 0, MA: 0, MI: 0, JU: 0, VI: 0, TOTAL: 0 };
+    // Mostrar todas las opciones únicas de Firestore en el resumen, agrupadas por tipo base
+    const opcionesResumen = Array.from(contadores?.todasLasOpciones?.values() || [])
+      .filter(label => !label.toUpperCase().includes('NO PEDIR')) // Filtrar NO PEDIR
+      .sort((a, b) => a.localeCompare(b));
     
-    // Mostrar todas las opciones únicas en el resumen, en orden alfabético
-    Object.entries(contadores).forEach(([categoria, valores]) => {
-      if (categoria !== 'FRUTAS') {
-        // Calcular total de la fila
-        const totalFila = valores.LU + valores.MA + valores.MI + valores.JU + valores.VI;
-        
-        // Sumar a los totales
-        totales.LU += valores.LU;
-        totales.MA += valores.MA;
-        totales.MI += valores.MI;
-        totales.JU += valores.JU;
-        totales.VI += valores.VI;
-        totales.TOTAL += totalFila;
-        
-        datosContadores.push({
-          'MENU': categoria,
-          'LU': valores.LU,
-          'MA': valores.MA,
-          'MI': valores.MI,
-          'JU': valores.JU,
-          'VI': valores.VI,
-          'TOTAL': totalFila
-        });
+    // Agrupar menús por tipo base (sin el postre)
+    const menusPorTipo = {};
+    const totales = { LUNES: 0, MARTES: 0, MIÉRCOLES: 0, JUEVES: 0, VIERNES: 0, TOTAL: 0 };
+    
+    opcionesResumen.forEach(label => {
+      // Extraer el nombre base del menú (antes de "C/")
+      const menuBase = label.includes('C/') ? label.split('C/')[0].trim() : label;
+      
+      // Obtener los contadores para este label específico
+      const fila = (contadores?.conteo && contadores.conteo[label]) || { LUNES: 0, MARTES: 0, MIÉRCOLES: 0, JUEVES: 0, VIERNES: 0 };
+      
+      // Si no existe este tipo base, crearlo
+      if (!menusPorTipo[menuBase]) {
+        menusPorTipo[menuBase] = { LUNES: 0, MARTES: 0, MIÉRCOLES: 0, JUEVES: 0, VIERNES: 0 };
       }
+      
+      // Sumar los contadores al tipo base
+      menusPorTipo[menuBase].LUNES += fila.LUNES;
+      menusPorTipo[menuBase].MARTES += fila.MARTES;
+      menusPorTipo[menuBase].MIÉRCOLES += fila.MIÉRCOLES;
+      menusPorTipo[menuBase].JUEVES += fila.JUEVES;
+      menusPorTipo[menuBase].VIERNES += fila.VIERNES;
+      
+      // Sumar a los totales generales
+      totales.LUNES += fila.LUNES;
+      totales.MARTES += fila.MARTES;
+      totales.MIÉRCOLES += fila.MIÉRCOLES;
+      totales.JUEVES += fila.JUEVES;
+      totales.VIERNES += fila.VIERNES;
+    });
+    
+    // Convertir el objeto agrupado a array para Excel
+    Object.entries(menusPorTipo).forEach(([menuBase, conteos]) => {
+      const totalFila = conteos.LUNES + conteos.MARTES + conteos.MIÉRCOLES + conteos.JUEVES + conteos.VIERNES;
+      totales.TOTAL += totalFila;
+      
+      datosContadores.push({
+        'MENU': menuBase,
+        'LUNES': conteos.LUNES,
+        'MARTES': conteos.MARTES,
+        'MIÉRCOLES': conteos.MIÉRCOLES,
+        'JUEVES': conteos.JUEVES,
+        'VIERNES': conteos.VIERNES,
+        'TOTAL': totalFila
+      });
     });
 
-    // Ordenar por MENU descendente antes de agregar el total
-    datosContadores.sort((a, b) => a.MENU.localeCompare(b.MENU));
-    // Agregar fila de totales
-    datosContadores.push({
-      'MENU': 'TOTAL',
-      'LU': totales.LU,
-      'MA': totales.MA,
-      'MI': totales.MI,
-      'JU': totales.JU,
-      'VI': totales.VI,
-      'TOTAL': totales.TOTAL
-    });
+    // Ordenar por MENU alfabéticamente
+    datosContadores.sort((a, b) =>
+      a.MENU.trim().normalize('NFD').replace(/\u0300-\u036f/g, '').toLowerCase()
+        .localeCompare(
+          b.MENU.trim().normalize('NFD').replace(/\u0300-\u036f/g, '').toLowerCase()
+        )
+    );
 
     // Preparar datos del resumen de bonificaciones
     const menusCompletamenteBonificados = pedidos.reduce((total, usuario) => {
       if (usuario.bonificacion) {
         return total + diasSemana.reduce((subtotal, dia) => {
           const diaData = usuario[`${dia}Data`];
-          return subtotal + (diaData && diaData.pedido && diaData.pedido !== 'no_pedir' ? 1 : 0);
+          return subtotal + (diaData && diaData.pedido && !esNoPedir(diaData.pedido) ? 1 : 0);
         }, 0);
       }
       return total;
@@ -598,7 +593,7 @@ const VerPedidos = ({ tipo = 'actual' }) => {
       if (!usuario.bonificacion) {
         return total + diasSemana.reduce((subtotal, dia) => {
           const diaData = usuario[`${dia}Data`];
-          return subtotal + (diaData && diaData.pedido && diaData.pedido !== 'no_pedir' ? 1 : 0);
+          return subtotal + (diaData && diaData.pedido && !esNoPedir(diaData.pedido) ? 1 : 0);
         }, 0);
       }
       return total;
@@ -606,7 +601,8 @@ const VerPedidos = ({ tipo = 'actual' }) => {
 
     // Calcular valores totales
     const valorTotalCompletamenteBonificados = menusCompletamenteBonificados * precioMenu;
-    const bonificacionNormalTotal = menusBonificacionParcial * bonificacionEmpleadoNormal;
+    const precioConBonificacion = Math.round(precioMenu * (100 - parseFloat(porcentajeBonificacion)) / 100);
+    const bonificacionNormalTotal = menusBonificacionParcial * (precioMenu - precioConBonificacion);
     const totalAbonarBetiJai = (menusCompletamenteBonificados + menusBonificacionParcial) * precioMenu;
 
     const datosBonificaciones = [
@@ -636,9 +632,85 @@ const VerPedidos = ({ tipo = 'actual' }) => {
     const wsContadores = XLSX.utils.json_to_sheet(datosContadores);
     const wsBonificaciones = XLSX.utils.json_to_sheet(datosBonificaciones);
 
+    // Crear hojas de etiquetado por día
+    const hojasEtiquetado = [];
+    
+    diasSemana.forEach((dia, indexDia) => {
+      const diaFirestore = diasSemanaFirestore[indexDia];
+      const datosDelDia = {};
+      
+      // Recopilar tipos de menú únicos para este día
+      const tiposDelDia = new Set();
+      
+      pedidos.forEach(usuario => {
+        if (!usuario.tienePedido) return;
+        
+        const diaData = usuario[`${dia}Data`];
+        if (!diaData || !diaData.pedido || esNoPedir(diaData.pedido)) return;
+        
+        // Buscar el label correspondiente al value del pedido
+        let labelCompleto = null;
+        
+        // Primero buscar en opcionesMenuCompleto
+        const opcionEncontrada = opcionesMenuCompleto.find(opt => opt.value === diaData.pedido);
+        if (opcionEncontrada) {
+          labelCompleto = opcionEncontrada.label;
+        } else {
+          // Si no se encuentra, usar el value convertido a label
+          labelCompleto = diaData.pedido.toUpperCase().replace(/_/g, ' ');
+        }
+        
+        if (!labelCompleto) return;
+        
+        // Extraer el tipo base del menú
+        const tipoBase = labelCompleto.includes('C/') ? labelCompleto.split('C/')[0].trim() : labelCompleto;
+        tiposDelDia.add(tipoBase);
+        
+        // Inicializar array si no existe
+        if (!datosDelDia[tipoBase]) {
+          datosDelDia[tipoBase] = [];
+        }
+        
+        // Agregar el nombre del usuario
+        datosDelDia[tipoBase].push(usuario.nombre.toUpperCase());
+      });
+      
+      // Solo crear hoja si hay datos para este día
+      if (tiposDelDia.size > 0) {
+        const tiposOrdenados = Array.from(tiposDelDia).sort();
+        
+        // Encontrar la longitud máxima para normalizar el array
+        const maxLength = Math.max(...Object.values(datosDelDia).map(arr => arr.length));
+        
+        // Crear el array para este día
+        const arrayDelDia = [];
+        for (let i = 0; i < maxLength; i++) {
+          const fila = {};
+          tiposOrdenados.forEach(tipo => {
+            fila[tipo] = datosDelDia[tipo][i] || '';
+          });
+          arrayDelDia.push(fila);
+        }
+        
+        // Crear la hoja de trabajo para este día
+        const wsDelDia = XLSX.utils.json_to_sheet(arrayDelDia);
+        
+        // Configurar anchos de columna
+        const wscolsDelDia = tiposOrdenados.map(() => ({ wch: 25 }));
+        wsDelDia['!cols'] = wscolsDelDia;
+        
+        // Guardar la hoja con su nombre
+        hojasEtiquetado.push({
+          nombre: `Etiquetado ${diaFirestore}`,
+          hoja: wsDelDia
+        });
+      }
+    });
+
     // Ajustar el ancho de las columnas
     const wscols = [
-      { wch: 30 }, // Nombre/Menú
+      { wch: 30 }, // Nombre
+      { wch: 15 }, // Legajo
       { wch: 30 }, // Fecha
       { wch: 30 }, // Lunes
       { wch: 30 }, // Martes
@@ -647,8 +719,8 @@ const VerPedidos = ({ tipo = 'actual' }) => {
       { wch: 30 }, // Viernes
       { wch: 20 }, // Cantidad de Pedidos
       { wch: 30 }, // Precio con Bonificaciones
-      { wch: 30 }, // Bonificacion Parcial
-      { wch: 30 }, // Bonificacion Completa
+      { wch: 30 }, // Bonificacion Total
+      { wch: 30 }, // Precio Completo
     ];
     wsPedidos['!cols'] = wscols;
     wsContadores['!cols'] = wscols;
@@ -663,6 +735,11 @@ const VerPedidos = ({ tipo = 'actual' }) => {
     XLSX.utils.book_append_sheet(wb, wsPedidos, 'Pedidos');
     XLSX.utils.book_append_sheet(wb, wsContadores, 'Resumen');
     XLSX.utils.book_append_sheet(wb, wsBonificaciones, 'Bonificaciones');
+    
+    // Agregar todas las hojas de etiquetado
+    hojasEtiquetado.forEach(({ nombre, hoja }) => {
+      XLSX.utils.book_append_sheet(wb, hoja, nombre);
+    });
 
     // Guardar el archivo
     const fecha = new Date().toLocaleDateString().replace(/\//g, '-');
@@ -684,11 +761,14 @@ const VerPedidos = ({ tipo = 'actual' }) => {
     let total = 0;
     diasSemana.forEach(dia => {
       const diaData = usuario[`${dia}Data`];
-      if (diaData && diaData.pedido && diaData.pedido !== 'no_pedir') {
+      if (diaData && diaData.pedido && !esNoPedir(diaData.pedido)) {
         if (usuario.bonificacion) {
           total += 0; // Si está bonificado, el precio es 0
         } else {
-          total += (precioMenu - bonificacionEmpleadoNormal); // Si no está bonificado, es el precio normal menos la bonificación
+          // Si no está bonificado, aplicar el porcentaje de bonificación
+          const porcentaje = parseFloat(porcentajeBonificacion) || 70;
+          const precioConBonificacion = Math.round(precioMenu * (100 - porcentaje) / 100);
+          total += precioConBonificacion;
         }
       }
     });
@@ -1081,46 +1161,68 @@ const VerPedidos = ({ tipo = 'actual' }) => {
             <thead>
               <tr>
                 <th>MENU</th>
-                <th>LU</th>
-                <th>MA</th>
-                <th>MI</th>
-                <th>JU</th>
-                <th>VI</th>
+                <th>LUNES</th>
+                <th>MARTES</th>
+                <th>MIÉRCOLES</th>
+                <th>JUEVES</th>
+                <th>VIERNES</th>
                 <th>TOTAL</th>
               </tr>
             </thead>
             <tbody>
               {(() => {
-                const filas = Object.entries(contadores)
-                  .filter(([categoria]) => categoria !== 'FRUTAS')
-                  .map(([categoria, valores]) => ({
-                    MENU: categoria,
-                    LU: valores.LU,
-                    MA: valores.MA,
-                    MI: valores.MI,
-                    JU: valores.JU,
-                    VI: valores.VI,
-                    TOTAL: valores.LU + valores.MA + valores.MI + valores.JU + valores.VI
-                  }));
-                // Separar la fila TOTAL si existe
-                const filaTotal = filas.find(f => f.MENU && f.MENU.trim().toUpperCase() === 'TOTAL');
-                const filasSinTotal = filas.filter(f => f.MENU && f.MENU.trim().toUpperCase() !== 'TOTAL');
-                // Ordenar A-Z robusto
-                filasSinTotal.sort((a, b) =>
+                // Agrupar menús por tipo base (sin el postre) para la tabla de resumen
+                const menusPorTipo = {};
+                
+                Object.entries(contadores?.conteo || {}).forEach(([categoria, valores]) => {
+                  // Filtrar NO PEDIR y FRUTAS
+                  if (categoria === 'FRUTAS' || categoria.toUpperCase().includes('NO PEDIR')) {
+                    return;
+                  }
+                  
+                  // Extraer el nombre base del menú (antes de "C/")
+                  const menuBase = categoria.includes('C/') ? categoria.split('C/')[0].trim() : categoria;
+                  
+                  // Si no existe este tipo base, crearlo
+                  if (!menusPorTipo[menuBase]) {
+                    menusPorTipo[menuBase] = { LUNES: 0, MARTES: 0, MIÉRCOLES: 0, JUEVES: 0, VIERNES: 0 };
+                  }
+                  
+                  // Sumar los contadores al tipo base
+                  menusPorTipo[menuBase].LUNES += valores.LUNES;
+                  menusPorTipo[menuBase].MARTES += valores.MARTES;
+                  menusPorTipo[menuBase].MIÉRCOLES += valores.MIÉRCOLES;
+                  menusPorTipo[menuBase].JUEVES += valores.JUEVES;
+                  menusPorTipo[menuBase].VIERNES += valores.VIERNES;
+                });
+                
+                // Convertir a array y calcular totales
+                const filas = Object.entries(menusPorTipo).map(([menuBase, valores]) => ({
+                  MENU: menuBase,
+                  LUNES: valores.LUNES,
+                  MARTES: valores.MARTES,
+                  MIÉRCOLES: valores.MIÉRCOLES,
+                  JUEVES: valores.JUEVES,
+                  VIERNES: valores.VIERNES,
+                  TOTAL: valores.LUNES + valores.MARTES + valores.MIÉRCOLES + valores.JUEVES + valores.VIERNES
+                }));
+                
+                // Ordenar alfabéticamente
+                filas.sort((a, b) =>
                   a.MENU.trim().normalize('NFD').replace(/\u0300-\u036f/g, '').toLowerCase()
                     .localeCompare(
                       b.MENU.trim().normalize('NFD').replace(/\u0300-\u036f/g, '').toLowerCase()
                     )
                 );
-                if (filaTotal) filasSinTotal.push(filaTotal);
-                return filasSinTotal.map(fila => (
+                
+                return filas.map(fila => (
                   <tr key={fila.MENU}>
                     <td>{fila.MENU}</td>
-                    <td>{fila.LU}</td>
-                    <td>{fila.MA}</td>
-                    <td>{fila.MI}</td>
-                    <td>{fila.JU}</td>
-                    <td>{fila.VI}</td>
+                    <td>{fila.LUNES}</td>
+                    <td>{fila.MARTES}</td>
+                    <td>{fila.MIÉRCOLES}</td>
+                    <td>{fila.JUEVES}</td>
+                    <td>{fila.VIERNES}</td>
                     <td>{fila.TOTAL}</td>
                   </tr>
                 ));
@@ -1140,7 +1242,7 @@ const VerPedidos = ({ tipo = 'actual' }) => {
                   if (usuario.bonificacion) {
                     return total + diasSemana.reduce((subtotal, dia) => {
                       const diaData = usuario[`${dia}Data`];
-                      return subtotal + (diaData && diaData.pedido && diaData.pedido !== 'no_pedir' ? 1 : 0);
+                      return subtotal + (diaData && diaData.pedido && !esNoPedir(diaData.pedido) ? 1 : 0);
                     }, 0);
                   }
                   return total;
@@ -1154,7 +1256,7 @@ const VerPedidos = ({ tipo = 'actual' }) => {
                   if (!usuario.bonificacion) {
                     return total + diasSemana.reduce((subtotal, dia) => {
                       const diaData = usuario[`${dia}Data`];
-                      return subtotal + (diaData && diaData.pedido && diaData.pedido !== 'no_pedir' ? 1 : 0);
+                      return subtotal + (diaData && diaData.pedido && !esNoPedir(diaData.pedido) ? 1 : 0);
                     }, 0);
                   }
                   return total;

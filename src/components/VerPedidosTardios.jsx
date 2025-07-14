@@ -20,7 +20,7 @@ const VerPedidosTardios = () => {
   const [menuData, setMenuData] = useState(null);
   const [precioMenu, setPrecioMenu] = useState(0);
   const [opcionesMenu, setOpcionesMenu] = useState(null);
-  const [bonificacionEmpleadoNormal, setBonificacionEmpleadoNormal] = useState(0);
+  const [porcentajeBonificacion, setPorcentajeBonificacion] = useState(70);
 
   const diasSemana = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
 
@@ -89,7 +89,14 @@ const VerPedidosTardios = () => {
           diasSemana.forEach(dia => {
             const diaData = pedido[dia];
             if (diaData && diaData.esTardio === true && diaData.pedido && diaData.pedido !== 'no_pedir') {
-              precioTotal += usuario.bonificacion ? 0 : (precioMenu - bonificacionEmpleadoNormal);
+              if (usuario.bonificacion) {
+                precioTotal += 0; // Si está bonificado, el precio es 0
+              } else {
+                // Si no está bonificado, aplicar el porcentaje de bonificación
+                const porcentaje = parseFloat(porcentajeBonificacion) || 70;
+                const precioConBonificacion = Math.round(precioMenu * (100 - porcentaje) / 100);
+                precioTotal += precioConBonificacion;
+              }
             }
           });
 
@@ -211,14 +218,14 @@ const VerPedidosTardios = () => {
       if (configSnap.exists()) {
         const data = configSnap.data();
         setPrecioMenu(data.precio || 0);
-        setBonificacionEmpleadoNormal(data.bonificacionEmpleadoNormal || 0);
+        setPorcentajeBonificacion(data.porcentajeBonificacion || 70);
       } else {
         setPrecioMenu(0);
-        setBonificacionEmpleadoNormal(0);
+        setPorcentajeBonificacion(70);
       }
     } catch (error) {
       setPrecioMenu(0);
-      setBonificacionEmpleadoNormal(0);
+      setPorcentajeBonificacion(70);
     }
   };
 
@@ -367,7 +374,9 @@ const VerPedidosTardios = () => {
         const diasPedidos = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'].filter(
           dia => formEdit[dia] && formEdit[dia] !== 'no_pedir' && usuarioEditando[`${dia}Data`]?.esTardio
         ).length;
-        const nuevoPrecioTotal = diasPedidos * precioMenu;
+        const porcentaje = parseFloat(porcentajeBonificacion) || 70;
+        const precioConBonificacion = Math.round(precioMenu * (100 - porcentaje) / 100);
+        const nuevoPrecioTotal = diasPedidos * precioConBonificacion;
 
         // Actualizar los campos de los días manteniendo el estado esTardio
         const diasActualizados = {};
@@ -421,7 +430,7 @@ const VerPedidosTardios = () => {
     return () => {
       window.removeEventListener('pedidosActualizados', handlePedidosActualizados);
     };
-  }, [precioMenu, bonificacionEmpleadoNormal]);
+  }, [precioMenu, porcentajeBonificacion]);
 
   if (loading) {
     return <Spinner />;

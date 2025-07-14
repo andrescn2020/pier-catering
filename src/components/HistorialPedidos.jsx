@@ -248,11 +248,13 @@ const HistorialPedidos = () => {
     const esBonificado = usuario.bonificado === true;
     
     if (esBonificado) {
-      // Usuario bonificado: precio completo
-      return diasConPedido * precioMenuConfig.precio;
+      // Usuario bonificado: precio = 0
+      return 0;
     } else {
-      // Usuario no bonificado: cada pedido cuesta bonificacionEmpleadoNormal
-      return diasConPedido * precioMenuConfig.bonificacionEmpleadoNormal;
+      // Usuario no bonificado: aplicar el porcentaje de bonificación
+      const porcentaje = parseFloat(precioMenuConfig.porcentajeBonificacion) || 70;
+      const precioConBonificacion = Math.round(precioMenuConfig.precio * (100 - porcentaje) / 100);
+      return diasConPedido * precioConBonificacion;
     }
   };
 
@@ -271,11 +273,13 @@ const HistorialPedidos = () => {
     const esBonificado = usuario.bonificado === true;
     
     if (esBonificado) {
-      // Usuario bonificado: precio completo
-      return precioMenuConfig.precio;
+      // Usuario bonificado: precio = 0
+      return 0;
     } else {
-      // Usuario no bonificado: cada pedido cuesta bonificacionEmpleadoNormal
-      return precioMenuConfig.bonificacionEmpleadoNormal;
+      // Usuario no bonificado: aplicar el porcentaje de bonificación
+      const porcentaje = parseFloat(precioMenuConfig.porcentajeBonificacion) || 70;
+      const precioConBonificacion = Math.round(precioMenuConfig.precio * (100 - porcentaje) / 100);
+      return precioConBonificacion;
     }
   };
 
