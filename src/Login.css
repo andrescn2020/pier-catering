@@ -8,6 +8,14 @@
   font-family: 'Roboto', sans-serif !important;
 }
 
+.login-logo {
+  position: absolute;
+  top: calc(40% - 260px);
+  left: 50%;
+  transform: translateX(-50%);
+  width: 140px;
+}
+
 .login-box {
   background-color: #2a2a28;
   padding: 2.5rem;

@@ -165,7 +165,7 @@ const VerPedidos = ({ tipo = 'actual' }) => {
       if (precioSnap.exists()) {
         const data = precioSnap.data();
         setPrecioMenu(data.precio || 0);
-        setPorcentajeBonificacion(data.porcentajeBonificacion || 70);
+        setPorcentajeBonificacion(data.porcentajeBonificacion ?? 70);
       }
       setIsPrecioLoaded(true);
     } catch (error) {

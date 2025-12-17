@@ -78,8 +78,13 @@ const Login = () => {
 
   return (
     <div className="login-container">
+          <img
+            src="/logo-beti-jai.png"
+            alt="Logo Beti Jai"
+            className="login-logo"
+          />
       <div className="login-box">
-        <h1 className="login-title">Beti Jai - Prueba</h1>
+        <h1 className="login-title">Pier Catering</h1>
         <form onSubmit={handleLogin} className="login-form">
           <div className="form-group">
             <label htmlFor="emailOrUsername">Email o Usuario</label>

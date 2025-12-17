@@ -24,9 +24,9 @@ const PrecioMenu = () => {
       
       if (precioSnap.exists()) {
         const data = precioSnap.data();
-        const precio = data.precio || 6400;
-        const porcentaje = data.porcentajeBonificacion || 70;
-        const monto = data.montoBonificacion || Math.round(precio * porcentaje / 100);
+        const precio = data.precio ?? 6400;
+        const porcentaje = data.porcentajeBonificacion ?? 70;
+        const monto = data.montoBonificacion ?? Math.round(precio * porcentaje / 100);
         
         setPrecios({
           precio: precio.toString(),

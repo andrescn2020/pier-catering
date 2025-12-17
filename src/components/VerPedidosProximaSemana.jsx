@@ -110,7 +110,7 @@ const VerPedidosProximaSemana = () => {
                   precioTotal += 0; // Si está bonificado, el precio es 0
                 } else {
                   // Si no está bonificado, aplicar el porcentaje de bonificación
-                  const porcentaje = parseFloat(porcentajeBonificacion) || 70;
+                  const porcentaje = parseFloat(porcentajeBonificacion ?? 70);
                   const precioConBonificacion = Math.round(precioMenu * (100 - porcentaje) / 100);
                   precioTotal += precioConBonificacion;
                 }
