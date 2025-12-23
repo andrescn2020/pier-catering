@@ -57,6 +57,18 @@
   background-color: #FFB74D;
 }
 
+.editar-usuario {
+  background-color: #17a2b8;
+  color: white;
+  margin-top: 1rem;
+  font-weight: 500;
+  min-width: 200px;
+}
+
+.editar-usuario:hover {
+  background-color: #138496;
+}
+
 .cerrar-sesion {
   background-color: #dc3545;
   color: white;

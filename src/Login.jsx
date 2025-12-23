@@ -84,7 +84,7 @@ const Login = () => {
             className="login-logo"
           />
       <div className="login-box">
-        <h1 className="login-title">Pier Catering</h1>
+        <h1 className="login-title">Pier Descuentos</h1>
         <form onSubmit={handleLogin} className="login-form">
           <div className="form-group">
             <label htmlFor="emailOrUsername">Email o Usuario</label>

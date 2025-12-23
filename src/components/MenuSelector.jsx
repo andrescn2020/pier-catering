@@ -80,6 +80,10 @@ const MenuSelector = () => {
     }
   };
 
+  const handleEditarUsuario = () => {
+    navigate('/menu/editar-usuario');
+  };
+
   const mostrarMenuActual = () => {
     const hoy = new Date();
     const diaSemana = hoy.getDay(); // 0=Dom, 1=Lun, ..., 6=Sab
@@ -167,12 +171,20 @@ const MenuSelector = () => {
           )}
         </div>
       )}
-      <button 
-        className="menu-button cerrar-sesion"
-        onClick={handleCerrarSesion}
-      >
-        Cerrar Sesión
-      </button>
+      <div className="menu-buttons">
+        <button 
+          className="menu-button editar-usuario"
+          onClick={handleEditarUsuario}
+        >
+          Editar Usuario
+        </button>
+        <button 
+          className="menu-button cerrar-sesion"
+          onClick={handleCerrarSesion}
+        >
+          Cerrar Sesión
+        </button>
+      </div>
       <Modal
         isOpen={modal.isOpen}
         title={modal.title}

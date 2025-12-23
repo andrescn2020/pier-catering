@@ -6,6 +6,7 @@ import AdminDashboard from './AdminDashboard';
 import Formulario from './Formulario';
 import MenuSelector from './components/MenuSelector';
 import CierreSemanalPage from './components/CierreSemanalPage';
+import EditarUsuario from './components/EditarUsuario';
 import ProtectedRoute from './ProtectedRoute';
 import AutoRedirect from './components/AutoRedirect';
 import './App.css';
@@ -44,6 +45,11 @@ function App() {
           <Route path="/menu/proxima" element={
             <ProtectedRoute requireAdmin={false}>
               <Formulario tipo="proxima" />
+            </ProtectedRoute>
+          } />
+          <Route path="/menu/editar-usuario" element={
+            <ProtectedRoute requireAdmin={false}>
+              <EditarUsuario />
             </ProtectedRoute>
           } />
           <Route path="*" element={<Navigate to="/" replace />} />
