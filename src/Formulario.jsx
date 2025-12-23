@@ -1161,7 +1161,7 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
         </div>
       )}
 
-      {!readOnly && (
+{ /*     {!readOnly && (
         <div className="advertencia-seleccion" style={{
           background: '#fef3c7',
           border: '1px solid #fbbf24',
@@ -1181,7 +1181,7 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
             <li>En pedidos tardes, todos los postres serán gelatina, independientemente de la opción seleccionada</li>
           </ul>
         </div>
-      )}
+      )}*/}
 
       {/* Mostrar el rango de la semana si está disponible */}
       {menuData?.semana && (

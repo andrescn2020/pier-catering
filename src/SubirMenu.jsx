@@ -35,7 +35,7 @@ const SubirMenu = () => {
 
   useEffect(() => {
     cargarEstructuraMenu();
-    cargarMenuActual();
+    // cargarMenuActual();
   }, []);
 
   useEffect(() => {
@@ -77,6 +77,8 @@ const SubirMenu = () => {
     } catch (error) {
       console.error('Error al cargar la estructura del menú:', error);
       setMessage({ type: 'error', text: 'Error al cargar la estructura del menú' });
+    } finally {
+    setLoading(false); // ✅ CLAVE
     }
   };
 
@@ -100,7 +102,7 @@ const SubirMenu = () => {
             viernes: data.dias.viernes || { esFeriado: false }
           }
         };
-        setMenuData(menuFormateado);
+        // setMenuData(menuFormateado);
         menuOriginal.current = JSON.stringify(menuFormateado);
         setMessage({ type: 'success', text: 'Menú actual cargado correctamente' });
       } else {
@@ -182,18 +184,18 @@ const SubirMenu = () => {
     }));
   };
 
-  const handlePostreChange = (dia, valor) => {
-    setMenuData(prevData => ({
-      ...prevData,
-      dias: {
-        ...prevData.dias,
-        [dia]: {
-          ...prevData.dias[dia],
-          postre: valor
-        }
-      }
-    }));
-  };
+  // const handlePostreChange = (dia, valor) => {
+  //   setMenuData(prevData => ({
+  //     ...prevData,
+  //     dias: {
+  //       ...prevData.dias,
+  //       [dia]: {
+  //         ...prevData.dias[dia],
+  //         postre: valor
+  //       }
+  //     }
+  //   }));
+  // };
 
   const handleFeriadoChange = (dia, esFeriado) => {
     setMenuData(prev => ({
@@ -207,7 +209,6 @@ const SubirMenu = () => {
             ...menuStructure.opciones.reduce((acc, opcion) => ({ ...acc, [opcion.toLowerCase().replace(/ /g, '')]: '' }), {}),
             ...(menuStructure.extras?.sandwichmiga ? { sandwichMiga: { tipo: '', cantidad: 0 } } : {}),
             ...(menuStructure.extras?.ensalada ? { ensaladas: { ensalada1: '' } } : {}),
-            ...(menuStructure.extras?.postre ? { postre: '' } : {})
           } : {})
         }
       }
@@ -337,8 +338,22 @@ const SubirMenu = () => {
       }
     };
 
+    console.log(text);
+    
+
     return `Analiza el siguiente menú semanal y extrae la información en formato JSON. 
-    El menú debe tener la siguiente estructura:
+    ⚠️ INSTRUCCIONES IMPORTANTES:
+    - IGNORÁ COMPLETAMENTE cualquier sección de POSTRES.
+    - NO incluyas postres en ningún campo (por ejemplo: dieta blanda, menú general, etc).
+    - Si un texto corresponde a postres, DESCARTALO.
+    - Solo extraé información de comidas principales.
+    REGLAS:
+    - No inventes información.
+    - No mezcles categorías.
+
+    - SI EL CAMPO QUEDA VACIO, USAR EL MISMO NOMBRE QUE FIGURA EN LA PROPIEDAD DEL JSON.
+
+    El menú debe tener EXACTAMENTE la siguiente estructura:
     ${JSON.stringify(menuStructureExample, null, 2)}
 
     Texto del menú:
