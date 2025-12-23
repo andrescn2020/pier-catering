@@ -60,7 +60,7 @@ const VerPedidosProximaSemana = () => {
             nombre: `${userData.nombre || ''} ${userData.apellido || ''}`.trim() || 'Usuario sin nombre',
             email: userData.email,
             legajo: userData.legajo || 'Sin asignar',
-            bonificacion: userData.bonificacion || false
+            bonificacion: userData.bonificacion // Preservar el valor original (true, false, o undefined)
           });
         }
       });
@@ -106,13 +106,17 @@ const VerPedidosProximaSemana = () => {
             diasSemana.forEach(dia => {
               const diaData = pedido[dia];
               if (diaData && diaData.pedido && !esNoPedir(diaData.pedido)) {
-                if (usuario.bonificacion) {
-                  precioTotal += 0; // Si está bonificado, el precio es 0
-                } else {
-                  // Si no está bonificado, aplicar el porcentaje de bonificación
+                if (usuario.bonificacion === true) {
+                  // Si está completamente bonificado, el precio es 0
+                  precioTotal += 0;
+                } else if (usuario.bonificacion === false) {
+                  // Si tiene bonificación parcial, aplicar el porcentaje
                   const porcentaje = parseFloat(porcentajeBonificacion ?? 70);
                   const precioConBonificacion = Math.round(precioMenu * (100 - porcentaje) / 100);
                   precioTotal += precioConBonificacion;
+                } else {
+                  // Si no tiene la propiedad bonificacion (undefined), precio completo
+                  precioTotal += precioMenu;
                 }
               }
             });
@@ -593,16 +597,36 @@ const VerPedidosProximaSemana = () => {
     if (!usuarioEditando) return;
     setEditLoading(true);
     try {
+      // Obtener el precio del menú y la bonificación
+      const precioRef = doc(db, 'config', 'precioMenu');
+      const precioSnap = await getDoc(precioRef);
+      const precioMenu = precioSnap.exists() ? precioSnap.data().precio : 0;
+      const porcentajeBonificacion = precioSnap.exists() ? precioSnap.data().porcentajeBonificacion : 70;
+
       // Buscar el pedido de este usuario
       const pedidosRef = collection(db, 'pedidos');
       const q = query(pedidosRef, where('uidUsuario', '==', usuarioEditando.id), where('tipo', '==', 'proxima'));
       const querySnapshot = await getDocs(q);
 
-      // Calcular nuevo precio total
-      const diasPedidos = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'].filter(
-        dia => !esNoPedir(formEdit[dia])
-      ).length;
-      const nuevoPrecioTotal = diasPedidos * precioPorDia;
+      // Calcular nuevo precio total usando la misma lógica que en cargarPedidos
+      let nuevoPrecioTotal = 0;
+      diasSemana.forEach(dia => {
+        const pedidoDia = formEdit[dia];
+        if (pedidoDia && !esNoPedir(pedidoDia)) {
+          if (usuarioEditando.bonificacion === true) {
+            // Si está completamente bonificado, el precio es 0
+            nuevoPrecioTotal += 0;
+          } else if (usuarioEditando.bonificacion === false) {
+            // Si tiene bonificación parcial, aplicar el porcentaje
+            const porcentaje = parseFloat(porcentajeBonificacion ?? 70);
+            const precioConBonificacion = Math.round(precioMenu * (100 - porcentaje) / 100);
+            nuevoPrecioTotal += precioConBonificacion;
+          } else {
+            // Si no tiene la propiedad bonificacion (undefined), precio completo
+            nuevoPrecioTotal += precioMenu;
+          }
+        }
+      });
 
       // Preparar los datos del pedido
       const pedidoData = {

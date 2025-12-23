@@ -60,7 +60,7 @@ const VerPedidos = ({ tipo = 'actual' }) => {
             nombre: `${userData.nombre || ''} ${userData.apellido || ''}`.trim() || 'Usuario sin nombre',
             email: userData.email,
             legajo: userData.legajo || 'Sin asignar',
-            bonificacion: userData.bonificacion || false
+            bonificacion: userData.bonificacion // Preservar el valor original (true, false, o undefined)
           });
         }
       });
@@ -100,13 +100,17 @@ const VerPedidos = ({ tipo = 'actual' }) => {
             diasSemana.forEach(dia => {
               const diaData = pedido[dia];
               if (diaData && diaData.pedido && !esNoPedir(diaData.pedido)) {
-                if (usuario.bonificacion) {
-                  precioTotal += 0; // Si está bonificado, el precio es 0
-                } else {
-                  // Si no está bonificado, aplicar el porcentaje de bonificación
+                if (usuario.bonificacion === true) {
+                  // Si está completamente bonificado, el precio es 0
+                  precioTotal += 0;
+                } else if (usuario.bonificacion === false) {
+                  // Si tiene bonificación parcial, aplicar el porcentaje
                   const porcentaje = parseFloat(porcentajeBonificacion) || 70;
                   const precioConBonificacion = Math.round(precioMenu * (100 - porcentaje) / 100);
                   precioTotal += precioConBonificacion;
+                } else {
+                  // Si no tiene la propiedad bonificacion (undefined), precio completo
+                  precioTotal += precioMenu;
                 }
               }
             });
@@ -762,13 +766,17 @@ const VerPedidos = ({ tipo = 'actual' }) => {
     diasSemana.forEach(dia => {
       const diaData = usuario[`${dia}Data`];
       if (diaData && diaData.pedido && !esNoPedir(diaData.pedido)) {
-        if (usuario.bonificacion) {
-          total += 0; // Si está bonificado, el precio es 0
-        } else {
-          // Si no está bonificado, aplicar el porcentaje de bonificación
+        if (usuario.bonificacion === true) {
+          // Si está completamente bonificado, el precio es 0
+          total += 0;
+        } else if (usuario.bonificacion === false) {
+          // Si tiene bonificación parcial, aplicar el porcentaje
           const porcentaje = parseFloat(porcentajeBonificacion) || 70;
           const precioConBonificacion = Math.round(precioMenu * (100 - porcentaje) / 100);
           total += precioConBonificacion;
+        } else {
+          // Si no tiene la propiedad bonificacion (undefined), precio completo
+          total += precioMenu;
         }
       }
     });
