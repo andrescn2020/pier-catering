@@ -78,7 +78,7 @@ const SubirMenu = () => {
       console.error('Error al cargar la estructura del menú:', error);
       setMessage({ type: 'error', text: 'Error al cargar la estructura del menú' });
     } finally {
-    setLoading(false); // ✅ CLAVE
+      setLoading(false); // ✅ CLAVE
     }
   };
 
@@ -217,17 +217,17 @@ const SubirMenu = () => {
 
   const detectarCambios = () => {
     if (!menuOriginal.current) return [];
-    
+
     const menuActual = JSON.stringify(menuData);
     if (menuActual === menuOriginal.current) return [];
 
     const diasModificados = [];
     const diasOriginales = JSON.parse(menuOriginal.current).dias;
-    
+
     Object.keys(menuData.dias).forEach(dia => {
       const diaOriginal = diasOriginales[dia];
       const diaActual = menuData.dias[dia];
-      
+
       if (JSON.stringify(diaOriginal) !== JSON.stringify(diaActual)) {
         diasModificados.push(dia);
       }
@@ -254,7 +254,7 @@ const SubirMenu = () => {
           esNuevo: true,
           tipo: menuType
         };
-        
+
         // Guardar el menú en la ubicación correcta según el tipo
         const menuRef = doc(db, 'menus', menuType === 'actual' ? 'menuActual' : 'menuProxima');
         await setDoc(menuRef, menuNuevo);
@@ -276,7 +276,7 @@ const SubirMenu = () => {
         // Si es una edición, mantenemos la lógica original
         const diasModificados = detectarCambios();
         const menuRef = doc(db, 'menus', 'menuActual');
-        
+
         await setDoc(menuRef, {
           ...menuData,
           ultimaModificacion: serverTimestamp(),
@@ -287,7 +287,7 @@ const SubirMenu = () => {
         setModal({
           isOpen: true,
           title: 'Éxito',
-          message: diasModificados.length > 0 
+          message: diasModificados.length > 0
             ? `Menú actualizado correctamente. Se modificaron los días: ${diasModificados.join(', ')}`
             : 'Menú actualizado correctamente',
           type: 'success'
@@ -296,10 +296,10 @@ const SubirMenu = () => {
         // Actualizar el menú original después de guardar
         menuOriginal.current = JSON.stringify(menuData);
       }
-      
+
       // Scroll al principio de la página
       window.scrollTo({ top: 0, behavior: 'smooth' });
-      
+
     } catch (error) {
       console.error('Error al actualizar el menú:', error);
       setModal({
@@ -339,19 +339,44 @@ const SubirMenu = () => {
     };
 
     console.log(text);
-    
 
-    return `Analiza el siguiente menú semanal y extrae la información en formato JSON. 
+    return `Analiza el siguiente menú semanal y extrae la información en formato JSON.
+    Responde SOLO con el JSON, sin texto adicional.
+    
+    INFORMACIÓN SOBRE EL FORMATO DEL TEXTO:
+    El texto ha sido extraído intentando preservar el LAYOUT VISUAL del PDF original.
+    - Se han insertado separadores ' | ' para indicar espacios horizontales grandes (probables columnas).
+    - El texto respeta el orden visual: arriba a abajo, izquierda a derecha.
+    
+    ESTRATEGIA DE PARSEO PRIORITARIA (POR COLUMNAS):
+    1. Interpreta el texto como una TABLA o GRILLA visual.
+    2. Si ves una estructura columnar (elementos separados por |), ASUME que corresponden a los días de la semana en orden:
+       [ Columna 1 = LUNES ] | [ Columna 2 = MARTES ] | [ Columna 3 = MIÉRCOLES ] | [ Columna 4 = JUEVES ] | [ Columna 5 = VIERNES ]
+    3. Si los nombres de los días("LUNES", "MARTES", etc.) aparecen alineados en una fila superior, usa esa alineación para guiarte.
+    4. Ignora "Viernes antes de Jueves" si es un error de lectura secuencial, fíjate en la posición VISUAL (Columna 4 vs Columna 5).
+    
+    SI NO HAY COLUMNAS CLARAS:
+    - Busca palabras clave 'BETI JAI' o los nombres de los días para separar los bloques.
+
     ⚠️ INSTRUCCIONES IMPORTANTES:
     - IGNORÁ COMPLETAMENTE cualquier sección de POSTRES.
     - NO incluyas postres en ningún campo (por ejemplo: dieta blanda, menú general, etc).
     - Si un texto corresponde a postres, DESCARTALO.
     - Solo extraé información de comidas principales.
-    REGLAS:
+    
+    REGLAS DE EXTRACCIÓN Y VALORES POR DEFECTO:
     - No inventes información.
     - No mezcles categorías.
-
-    - SI EL CAMPO QUEDA VACIO, USAR EL MISMO NOMBRE QUE FIGURA EN LA PROPIEDAD DEL JSON.
+    
+    CASOS ESPECIALES DE CONTENIDO:
+    1. Si una categoría (como "DIETA BLANDA" o "LIGHT") aparece en el menú pero NO tiene descripción específica (o solo aparece el título), USA EL NOMBRE DE LA CATEGORÍA COMO VALOR.
+       Ejemplo: Si dice "DIETA BLANDA" y luego pasa a Postres, el valor debe ser "Dieta Blanda".
+    2. REGLA DE CANTIDADES DINÁMICAS:
+       - Si detectas CUALQUIER indicador de cantidad (como "(X2)", "(X3)", "X2", "2 u.", etc.) asociado a un ítem del menú (ya sea en el título de la categoría o en la descripción):
+       - INCLÚYELO SIEMPRE al principio del texto extraído.
+       - No importa si es pebete, sandwich o cualquier otro plato. Si el PDF dice "X2", el JSON debe decir "X2".
+       - Ejemplo: Si el texto dice "OPCIÓN (X3) ...", el resultado debe ser "(X3) ...".
+    3. Si el campo queda totalmente vacío y no se menciona en el día, déjalo como string vacío "". PERO si se menciona el título, repite el título como contenido.
 
     El menú debe tener EXACTAMENTE la siguiente estructura:
     ${JSON.stringify(menuStructureExample, null, 2)}
@@ -420,20 +445,71 @@ const SubirMenu = () => {
     try {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      
+
       let fullText = '';
-      
+
       // Extraer texto de todas las páginas
+      // Extraer texto de todas las páginas con ordenamiento visual (Geometric Sorting)
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        const pageText = textContent.items.map(item => item.str).join(' ');
-        fullText += pageText + '\\n';
+
+        // Obtenemos los items y los ordenamos por posición Y (descendente) y luego X (ascendente)
+        const items = textContent.items;
+
+        items.sort((a, b) => {
+          const yA = a.transform[5];
+          const yB = b.transform[5];
+          // Tolerancia vertical para considerar que están en la "misma línea" visual
+          if (Math.abs(yA - yB) < 8) {
+            return a.transform[4] - b.transform[4]; // X ascendente
+          }
+          return yB - yA; // Y descendente (los valores mayores están arriba en PDF)
+        });
+
+        let lastY = null;
+        let lastX = null;
+        let lastWidth = 0;
+        let pageText = '';
+
+        items.forEach(item => {
+          const y = item.transform[5];
+          const x = item.transform[4];
+          const width = item.width || 0; // width puede venir en el item
+
+          // Detectar nueva línea visual
+          if (lastY !== null && Math.abs(y - lastY) > 10) {
+            pageText += '\n';
+            lastX = null; // Reset X tracking en nueva línea actual
+          }
+
+          if (lastX !== null) {
+            // Calcular espacio desde el final del item anterior
+            const gap = x - (lastX + lastWidth);
+
+            // Si el espacio es significativo (ej. > 15px), insertar separador de columna visual
+            if (gap > 15) {
+              pageText += ' | ';
+            } else if (gap > 2) {
+              // Espacio normal de palabra
+              pageText += ' '; // Espacio simple
+            }
+            // Si el gap es muy pequeño o negativo, no agregamos espacio (kerning o unión)
+          }
+
+          pageText += item.str;
+
+          lastY = y;
+          lastX = x;
+          lastWidth = width;
+        });
+
+        fullText += pageText + '\n\n-------------------\n\n';
       }
 
       // Procesar el texto con GPT
       const menuData = await processMenuWithGPT(fullText);
-      
+
       // Actualizar el estado con los datos procesados
       setMenuData(prevData => ({
         ...prevData,
@@ -468,7 +544,7 @@ const SubirMenu = () => {
     return (
       <div className="dia-menu">
         <h3>{dia.charAt(0).toUpperCase() + dia.slice(1)}</h3>
-        
+
         <div className="feriado-toggle">
           <label>
             <input
@@ -512,9 +588,9 @@ const SubirMenu = () => {
         message={modal.message}
         type={modal.type}
       />
-      
+
       <h2 className="subir-menu-title">Subir/Editar Menú</h2>
-      
+
       <div className="menu-type-selection">
         <label>
           <input
@@ -556,7 +632,7 @@ const SubirMenu = () => {
           ref={fileInputRef}
           style={{ display: 'none' }}
         />
-        <button 
+        <button
           type="button"
           className="upload-button"
           onClick={() => fileInputRef.current.click()}
@@ -572,7 +648,7 @@ const SubirMenu = () => {
           )}
         </button>
       </div>
-      
+
       {message.text && (
         <div className={`message ${message.type}`}>
           {message.text}
