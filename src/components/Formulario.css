@@ -700,4 +700,151 @@
     margin: 0 auto;
   }
 }
-*/ 
+*/
+
+/* === Cartel informativo de imágenes === */
+.menu-img-hint-banner {
+  text-align: center;
+  font-size: 0.82rem;
+  color: #aaa;
+  background: rgba(255, 160, 0, 0.07);
+  border: 1px solid rgba(255, 160, 0, 0.2);
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  margin-bottom: 1rem;
+}
+
+/* === Imagen del plato — tooltip al hacer hover === */
+.menu-item-desc-wrap {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.menu-item-desc {
+  margin: 0;
+  cursor: default;
+}
+
+/* Solo cuando hay imagen: indica visualmente que hay foto */
+.has-img-tooltip .menu-item-desc {
+  cursor: help;
+  text-decoration: underline dotted rgba(255, 160, 0, 0.5);
+  text-underline-offset: 3px;
+}
+
+.has-img-tooltip .menu-item-desc::after {
+  content: "🖼️";
+  font-size: 0.95em;
+  margin-left: 6px;
+  opacity: 1;
+  vertical-align: middle;
+  pointer-events: none;
+}
+
+.menu-img-tooltip {
+  display: none;
+  position: absolute;
+  bottom: calc(100% + 2px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  background: #1a1a18;
+  border: 1px solid #FFA000;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+  pointer-events: all;
+  cursor: pointer;
+  width: 312px;
+  max-width: none !important;
+}
+
+.menu-img-tooltip img {
+  width: 100%;
+  height: 216px;
+  object-fit: contain;
+  background-color: #111;
+  display: block;
+}
+
+/* Flecha del tooltip hacia abajo */
+.menu-img-tooltip::after {
+  content: '';
+  position: absolute;
+  bottom: -7px;
+  left: 50%;
+  transform: translateX(-50%);
+  border-left: 7px solid transparent;
+  border-right: 7px solid transparent;
+  border-top: 7px solid #FFA000;
+}
+
+.has-img-tooltip:hover .menu-img-tooltip,
+.menu-img-tooltip:hover {
+  display: block;
+  animation: tooltipFadeIn 0.18s ease;
+}
+
+/* === Lightbox === */
+.lightbox-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.88);
+  z-index: 99999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: lightboxFadeIn 0.18s ease;
+  cursor: zoom-out;
+}
+
+@keyframes lightboxFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.lightbox-img {
+  max-width: 90vw;
+  max-height: 88vh;
+  object-fit: contain;
+  border-radius: 10px;
+  box-shadow: 0 16px 64px rgba(0, 0, 0, 0.8);
+  cursor: default;
+}
+
+.lightbox-close {
+  position: fixed;
+  top: 20px;
+  right: 24px;
+  background: rgba(255, 160, 0, 0.15);
+  border: 1px solid #FFA000;
+  color: #FFA000;
+  font-size: 1.4rem;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s;
+  z-index: 100000;
+}
+
+.lightbox-close:hover {
+  background: #FFA000;
+  color: #111;
+}
+
+@keyframes tooltipFadeIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(4px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* En mobile: tooltip más pequeño y hacia arriba */
+@media (max-width: 600px) {
+  .menu-img-tooltip {
+    width: 150px;
+  }
+}

@@ -12,6 +12,7 @@ dist
 dist-ssr
 Credenciales Admin.txt
 .env
+.gitignore
 *.local
 
 # Editor directories and files
@@ -24,3 +25,5 @@ Credenciales Admin.txt
 *.njsproj
 *.sln
 *.sw?
+*.xlsx
+

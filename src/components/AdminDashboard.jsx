@@ -11,6 +11,7 @@ import VerPedidos from './VerPedidos';
 import HistorialPedidos from './HistorialPedidos';
 import PrecioMenu from './PrecioMenu';
 import CierreSemanal from './CierreSemanal';
+import ImagenesMenu from './ImagenesMenu';
 import Modal from './Modal';
 import { getFirestore, collection, query, where, getDocs, setDoc, doc, deleteDoc, getDoc, addDoc, Timestamp } from 'firebase/firestore';
 import ConfiguracionOpciones from './ConfiguracionOpciones';
@@ -358,6 +359,13 @@ const AdminDashboard = ({ userRole }) => {
     navigate('/admin/cierre-semanal');
   };
 
+  const handleImagenesMenu = () => {
+    setActiveSection('imagenesMenu');
+    setTimeout(() => {
+      backButtonRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 100);
+  };
+
   const renderActiveSection = () => {
     switch (activeSection) {
       case 'subirMenu':
@@ -384,6 +392,8 @@ const AdminDashboard = ({ userRole }) => {
         return <PrecioMenu readOnly={isVisor} />;
       case 'configuracionOpciones':
         return <ConfiguracionOpciones readOnly={isVisor} />;
+      case 'imagenesMenu':
+        return <ImagenesMenu readOnly={isVisor} />;
       default:
         return null;
     }
@@ -429,6 +439,10 @@ const AdminDashboard = ({ userRole }) => {
             <span className="button-icon">⚙️</span>
             Configurar Opciones del Menú
           </button> 
+          <button className="admin-button" style={{backgroundColor:'#7b3f9e'}} onClick={handleImagenesMenu}>
+            <span className="button-icon">🖼️</span>
+            Imágenes de Menús
+          </button>
           <button className="admin-button" style={{backgroundColor:'#88bc27'}} onClick={handleVerPedidosActual}>
             <span className="button-icon">📋</span>
             Pedidos Semana Actual

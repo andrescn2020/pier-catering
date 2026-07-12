@@ -1,13 +1,85 @@
-// src/components/Formulario.jsx
+﻿// src/components/Formulario.jsx
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getAuth, signOut } from "firebase/auth";
 import { getFirestore, doc, getDoc, setDoc, collection, query, orderBy, limit, getDocs, where, deleteDoc, addDoc, serverTimestamp } from "firebase/firestore";
+import { catalogDb } from '../firebase';
 import Modal from './Modal';
 import Spinner from './Spinner';
 import "./Formulario.css";
 
 const diasSemana = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
+
+// Normaliza texto para comparación flexible: sin tildes, sin puntuación, sin mayúsculas, sin espacios extra
+const normalizarTexto = (t) =>
+  (t ?? '').trim().toLowerCase()
+    .normalize('NFD').replace(/\p{Diacritic}/gu, '')  // quita tildes: acentos
+    .replace(/[^a-z0-9\s]/gi, '')                       // quita puntuación y símbolos
+    .replace(/\s+/g, ' ');                              // colapsa espacios múltiples
+
+// Busca en el catálogo compartido si un texto de plato tiene imagen asociada
+const buscarImagenTooltip = (texto, imagenes) => {
+  const imgUrl = Object.entries(imagenes || {}).find(
+    ([k]) => normalizarTexto(k) === normalizarTexto(texto)
+  )?.[1]?.url;
+  if (!imgUrl) return null;
+  return (
+    <div className="menu-img-tooltip" data-lightbox-url={imgUrl}>
+      <img src={imgUrl} alt={texto} onError={e => { e.target.style.display = 'none'; }} />
+    </div>
+  );
+};
+
+// Renderiza un ítem del menú (plato/sandwich/ensalada/postre) con tooltip de imagen si corresponde.
+// Se comparte entre los 5 bloques diarios (lunes a viernes) porque su lógica es idéntica.
+const renderPlatoItem = (key, value, imagenes) => {
+  if (key === 'sandwichMiga' && value?.tipo) {
+    const tooltip = buscarImagenTooltip(value.tipo, imagenes);
+    return (
+      <div key={key} className="sandwich-miga">
+        <h4>Sandwich de Miga</h4>
+        <div className={`menu-item-desc-wrap${tooltip ? ' has-img-tooltip' : ''}`}>
+          <p className="menu-item-desc">{value.tipo} ({value.cantidad} triángulos)</p>
+          {tooltip}
+        </div>
+      </div>
+    );
+  }
+  if (key === 'ensaladas' && value?.ensalada1) {
+    const tooltip = buscarImagenTooltip(value.ensalada1, imagenes);
+    return (
+      <div key={key} className="ensalada">
+        <h4>Ensalada</h4>
+        <div className={`menu-item-desc-wrap${tooltip ? ' has-img-tooltip' : ''}`}>
+          <p className="menu-item-desc">{value.ensalada1}</p>
+          {tooltip}
+        </div>
+      </div>
+    );
+  }
+  if (key === 'postre') {
+    const tooltip = buscarImagenTooltip(value, imagenes);
+    return (
+      <div key={key} className="postre">
+        <h4>Postre</h4>
+        <div className={`menu-item-desc-wrap${tooltip ? ' has-img-tooltip' : ''}`}>
+          <p className="menu-item-desc">{value}</p>
+          {tooltip}
+        </div>
+      </div>
+    );
+  }
+  const tooltip = buscarImagenTooltip(value, imagenes);
+  return (
+    <div key={key} className="menu-item">
+      <h4>{key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')}</h4>
+      <div className={`menu-item-desc-wrap${tooltip ? ' has-img-tooltip' : ''}`}>
+        <p className="menu-item-desc">{value}</p>
+        {tooltip}
+      </div>
+    </div>
+  );
+};
 
 const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
   const [data, setData] = useState({
@@ -48,6 +120,7 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
   const [precioPorDia, setPrecioPorDia] = useState(2000); // Precio por defecto
   const [precioMenu, setPrecioMenu] = useState(2000);
   const [porcentajeBonificacion, setPorcentajeBonificacion] = useState(70);
+  const [lightboxImg, setLightboxImg] = useState(null);
 
   // Calcular día de la semana y semana seleccionada dentro del componente
   const hoy = new Date();
@@ -174,6 +247,34 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
     const pad = n => n.toString().padStart(2, '0');
     return `Lunes ${pad(lunes.getDate())} al Viernes ${pad(viernes.getDate())}`;
   }
+
+  // Event delegation para clicks en los tooltips de imagen + tecla Escape para cerrar lightbox
+  useEffect(() => {
+    const handleClick = (e) => {
+      const tooltipEl = e.target.closest('[data-lightbox-url]');
+      if (tooltipEl) {
+        const url = tooltipEl.dataset.lightboxUrl;
+        if (url) {
+          tooltipEl.style.setProperty('display', 'none', 'important');
+          setLightboxImg(url);
+        }
+      }
+    };
+    const handleKey = (e) => {
+      if (e.key === 'Escape') {
+        document.querySelectorAll('.menu-img-tooltip').forEach(el => {
+          el.style.removeProperty('display');
+        });
+        setLightboxImg(null);
+      }
+    };
+    document.addEventListener('click', handleClick);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('click', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, []);
 
   useEffect(() => {
     const loadInitialData = async () => {
@@ -325,7 +426,16 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
         if (menuDoc.exists()) {
           const menuData = menuDoc.data();
           // console.log("Menú cargado:", menuData);
-          
+
+          // Cargar imágenes de platos desde el catálogo central (compartido entre clientes)
+          let imgsLocales = {};
+          try {
+            const imagenesSnap = await getDoc(doc(catalogDb, 'config', 'textoImagenes'));
+            if (imagenesSnap.exists()) imgsLocales = imagenesSnap.data();
+          } catch (imgErr) {
+            console.warn('No se pudo cargar el catálogo de imágenes:', imgErr.message);
+          }
+
           const menuFormateado = {
             LUNES: menuData.dias.lunes?.esFeriado ? (
               <div className="menu-opcion-feriado">
@@ -344,38 +454,7 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
                     };
                     return formatKey(keyA).localeCompare(formatKey(keyB));
                   })
-                  .map(([key, value]) => {
-                    if (key === 'sandwichMiga' && value?.tipo) {
-                      return (
-                        <div key={key} className="sandwich-miga">
-                          <h4>Sandwich de Miga</h4>
-                          <p>{value.tipo} ({value.cantidad} triángulos)</p>
-                        </div>
-                      );
-                    }
-                    if (key === 'ensaladas' && value?.ensalada1) {
-                      return (
-                        <div key={key} className="ensalada">
-                          <h4>Ensalada</h4>
-                          <p>{value.ensalada1}</p>
-                        </div>
-                      );
-                    }
-                    if (key === 'postre') {
-                      return (
-                        <div key={key} className="postre">
-                          <h4>Postre</h4>
-                          <p>{value}</p>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={key} className="menu-item">
-                        <h4>{key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')}</h4>
-                        <p>{value}</p>
-                      </div>
-                    );
-                  })}
+                  .map(([key, value]) => renderPlatoItem(key, value, imgsLocales))}
               </div>
             ),
             MARTES: menuData.dias.martes?.esFeriado ? (
@@ -395,38 +474,7 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
                     };
                     return formatKey(keyA).localeCompare(formatKey(keyB));
                   })
-                  .map(([key, value]) => {
-                    if (key === 'sandwichMiga' && value?.tipo) {
-                      return (
-                        <div key={key} className="sandwich-miga">
-                          <h4>Sandwich de Miga</h4>
-                          <p>{value.tipo} ({value.cantidad} triángulos)</p>
-                        </div>
-                      );
-                    }
-                    if (key === 'ensaladas' && value?.ensalada1) {
-                      return (
-                        <div key={key} className="ensalada">
-                          <h4>Ensalada</h4>
-                          <p>{value.ensalada1}</p>
-                        </div>
-                      );
-                    }
-                    if (key === 'postre') {
-                      return (
-                        <div key={key} className="postre">
-                          <h4>Postre</h4>
-                          <p>{value}</p>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={key} className="menu-item">
-                        <h4>{key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')}</h4>
-                        <p>{value}</p>
-                      </div>
-                    );
-                  })}
+                  .map(([key, value]) => renderPlatoItem(key, value, imgsLocales))}
               </div>
             ),
             MIERCOLES: menuData.dias.miercoles?.esFeriado ? (
@@ -446,38 +494,7 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
                     };
                     return formatKey(keyA).localeCompare(formatKey(keyB));
                   })
-                  .map(([key, value]) => {
-                    if (key === 'sandwichMiga' && value?.tipo) {
-                      return (
-                        <div key={key} className="sandwich-miga">
-                          <h4>Sandwich de Miga</h4>
-                          <p>{value.tipo} ({value.cantidad} triángulos)</p>
-                        </div>
-                      );
-                    }
-                    if (key === 'ensaladas' && value?.ensalada1) {
-                      return (
-                        <div key={key} className="ensalada">
-                          <h4>Ensalada</h4>
-                          <p>{value.ensalada1}</p>
-                        </div>
-                      );
-                    }
-                    if (key === 'postre') {
-                      return (
-                        <div key={key} className="postre">
-                          <h4>Postre</h4>
-                          <p>{value}</p>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={key} className="menu-item">
-                        <h4>{key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')}</h4>
-                        <p>{value}</p>
-                      </div>
-                    );
-                  })}
+                  .map(([key, value]) => renderPlatoItem(key, value, imgsLocales))}
               </div>
             ),
             JUEVES: menuData.dias.jueves?.esFeriado ? (
@@ -497,38 +514,7 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
                     };
                     return formatKey(keyA).localeCompare(formatKey(keyB));
                   })
-                  .map(([key, value]) => {
-                    if (key === 'sandwichMiga' && value?.tipo) {
-                      return (
-                        <div key={key} className="sandwich-miga">
-                          <h4>Sandwich de Miga</h4>
-                          <p>{value.tipo} ({value.cantidad} triángulos)</p>
-                        </div>
-                      );
-                    }
-                    if (key === 'ensaladas' && value?.ensalada1) {
-                      return (
-                        <div key={key} className="ensalada">
-                          <h4>Ensalada</h4>
-                          <p>{value.ensalada1}</p>
-                        </div>
-                      );
-                    }
-                    if (key === 'postre') {
-                      return (
-                        <div key={key} className="postre">
-                          <h4>Postre</h4>
-                          <p>{value}</p>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={key} className="menu-item">
-                        <h4>{key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')}</h4>
-                        <p>{value}</p>
-                      </div>
-                    );
-                  })}
+                  .map(([key, value]) => renderPlatoItem(key, value, imgsLocales))}
               </div>
             ),
             VIERNES: menuData.dias.viernes?.esFeriado ? (
@@ -548,38 +534,7 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
                     };
                     return formatKey(keyA).localeCompare(formatKey(keyB));
                   })
-                  .map(([key, value]) => {
-                    if (key === 'sandwichMiga' && value?.tipo) {
-                      return (
-                        <div key={key} className="sandwich-miga">
-                          <h4>Sandwich de Miga</h4>
-                          <p>{value.tipo} ({value.cantidad} triángulos)</p>
-                        </div>
-                      );
-                    }
-                    if (key === 'ensaladas' && value?.ensalada1) {
-                      return (
-                        <div key={key} className="ensalada">
-                          <h4>Ensalada</h4>
-                          <p>{value.ensalada1}</p>
-                        </div>
-                      );
-                    }
-                    if (key === 'postre') {
-                      return (
-                        <div key={key} className="postre">
-                          <h4>Postre</h4>
-                          <p>{value}</p>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div key={key} className="menu-item">
-                        <h4>{key.charAt(0).toUpperCase() + key.slice(1).replace(/_/g, ' ')}</h4>
-                        <p>{value}</p>
-                      </div>
-                    );
-                  })}
+                  .map(([key, value]) => renderPlatoItem(key, value, imgsLocales))}
               </div>
             )
           };
@@ -1677,6 +1632,28 @@ const Formulario = ({ readOnly = false, tipo = 'actual' }) => {
           )}
         </>
       )}
+
+      {/* Lightbox - imagen completa al hacer click */}
+      {lightboxImg && (() => {
+        const closeLightbox = () => {
+          // Restaurar tooltips que fueron ocultados manualmente
+          document.querySelectorAll('.menu-img-tooltip').forEach(el => {
+            el.style.removeProperty('display');
+          });
+          setLightboxImg(null);
+        };
+        return (
+          <div className="lightbox-overlay" onClick={closeLightbox}>
+            <button className="lightbox-close" onClick={closeLightbox}>✕</button>
+            <img
+              className="lightbox-img"
+              src={lightboxImg}
+              alt="Vista completa"
+              onClick={e => e.stopPropagation()}
+            />
+          </div>
+        );
+      })()}
     </div>
   );
 };
